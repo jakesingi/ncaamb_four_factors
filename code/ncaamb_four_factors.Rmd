@@ -1,0 +1,509 @@
+---
+title: "The Four Factors: Statistics that Make College Basketball Teams Win"
+author: "Jake Singleton"
+date: "11/12/2020"
+output: pdf_document
+---
+
+
+## Motivation: Dean Oliver and the NBA
+
+In the early 2000s, statistician [Dean Oliver](https://en.wikipedia.org/wiki/Dean_Oliver_(statistician)) published his findings on the "four-factor model," a system used to evaluate the performance of NBA teams. He found that the four factors do a very nice job of revealing teams' strengths and weaknesses in addition to being good predictors of wins. They are as follows:
+
+1. Effective Field Goal Percentage (EFG)
+2. Turnovers Committed per Possession (TPP)
+3. Offensive Rebounding Percentage (ORP)
+4. Free Throw Rate (FTR)
+
+EFG is calculated as (all field goals made + 0.5(3-point field goals made)) / (all field goal attempts). The great thing about EFG is that it weights 3-pointers appropriately, as 3-pointers are 50% more valuable than 2-pointers. Thus, it captures a team's shooting ability far better than standard FG%. 
+
+TPP is simply (turnovers committed) / (possessions). Smaller TPP is better, as it means a team gives up the ball less often.
+
+ORP is (offensive rebounds) / (offensive rebounds + opponent's defensive rebounds). Obviously, high ORP is good and means the team gets second chances at making baskets.
+
+FTR is (free throw attempts) / (field goal attempts) and measures a team's propensity to get to the free throw line (a good thing)!
+
+Note that all of the numbers needed to calculate the four factors can be found in the box score. (Kind of... possessions are not in the box score, but analysts have come up with [good formulas](https://kenpom.com/blog/the-possession/) that estimate the number of possessions in a game very closely.) Not only does this makes our task easier, but it's also interesting that a team's win total can be explained so well by simple box score statistics (obviously these are modifications of box score stats, but they're nothing fancy). While Oliver called these statistics the four factors, he calculated them from a defensive point of view as well, yielding eight factors. The defensive factors are:
+
+1. Opponent's Effective Field Goal Percentage (OPP_EFG), i.e. the EFG a team yields to their opponents. Lower is better.
+2. Defensive Turnovers Caused per Possession (DTPP). Higher is better.
+3. Defensive Rebounding Percentage (DRP). Higher is better.
+4. Opponent's Free Throw Rate (OPP_FTR). Lower is better.
+
+These are computed analogously to their offensive counterparts.
+
+So, how important are these factors? Oliver's analysis led to the following rankings:
+
+1. Shooting differential, EFG - OPP_EFG (40% importance)
+2. Turnover differential, TPP - DTPP (25%)
+3. Rebounding differential, ORP - DPP (20%)
+4. Free throw rate differential, FTR - OPP_FTR (15%)
+
+Note that other analysis online (e.g. [here](https://squared2020.com/2017/09/05/introduction-to-olivers-four-factors/)) and in Chapter 28 of Wayne Winston's *Mathletics* has shown Oliver's rankings overvalue free throw rate and rebounding and undervaue turnovers and shooting. Specifically, Winston found that EFG_diff explains 71% of variance in NBA team wins, TO_diff 15%, REB_diff 6%, and FTR_diff essentially 0%. I should also remind you that Oliver's work was done in the early-mid 2000s before the NBA's ["3-point revolution"](https://www.theringer.com/nba/2019/2/27/18240583/3-point-boom-nba-daryl-morey) of the mid-late 2010s, and so I believe EFG_diff is absolutely more valuable now than what it was. 
+
+In this analysis, I will analyze college basketball data from the 2019-2020 season to see how the college game differs from the pro game.
+
+## The Data
+
+There are a lot of Division 1 college basketball games in a season--too many, in fact, to go through every single one. So, I looked at the 10 ["high-major" conferences](https://en.wikipedia.org/wiki/Mid-major#Basketball): the Power 5 plus the Big East, Mountain West, Atlantic 10, American Athletic, and West Coast Conferences. From each conference, I took the champion, a middling team, and bottom of the barrel, yielding a total of 30 teams. These teams are: (Big12: Kansas, Texas Tech, KState), (WCC: Gonzaga, Pepperdine, Portland), (A10: Dayton, UMass, Fordham), (ACC: FSU, Syracuse, Wake Forest), (MountainW: SDSU, Colorado State, Wyoming), (SEC: Kentucky, A&M, Vandy), (Pac12: Oregon, Colorado, Washington), (Big10: Wisconsin, Penn State, Nebraska), (BigE: Creighton, Marquette, DePaul), and (AAC: Houston, SMU, Tulane). I employed this approach in order to include a wide variety of team talent. I limited the games scraped for each team to 30 games, yielding a total of 900 games (there was no overlap). All data comes from the 19-20 season.
+
+## The Code
+
+To scrape the relevant data, they key part was collecting all of the necessary ESPN game IDs. For example, California's first game of the season was against Pepperdine, and the box score is at this link: https://www.espn.com/mens-college-basketball/matchup?gameId=401170553. The last 9 digits of the link comprise the game ID, and I had to collect each one manually. If anyone knows a better way of getting these IDs, please let me know. 
+
+I'm not going to show all of the code since it's pretty long, but I will display all of the important outputs. You can find the R Markdown file in its full form in the code directory of this repository.
+
+```{r, message=F, echo=F}
+# Packages
+library(rvest)
+library(tidyverse)
+library(stringr)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+```
+
+
+```{r, echo=F}
+# Function that scrapes box score and puts into data frame
+scrape_box = function(url_string) {
+  game_id = str_extract(url_string, "[0-9]+")
+  tables = read_html(url_string) %>%
+    html_table()
+  teams = tables[[1]][ , 1]
+  box_data = tables[[2]]
+  colnames(box_data) = c(paste("game_id", game_id, sep = "="), teams[1], teams[2])
+  return(box_data)
+}
+
+# Takes box score (a data frame) and transforms it, using transpose and dplyr tricks
+transform_box = function(df) {
+  teams = names(df)[2:3]
+  transposed = as_tibble(t(df))  # Takes transpose
+  names(transposed) = transposed %>%  # Takes first row and makes it column names (these are FG, FG%, 3PT, 3PT%, etc.)
+    slice(1) %>% 
+    unlist()
+  transposed = transposed %>%  # Deletes first row of column names, adds in Team column and a flag for conference game (1 if so, 0 if not)
+    slice(-1) %>%
+    mutate(Team = teams) %>%
+    relocate(Team)
+  return(transposed)
+}
+
+# Takes transformed box and creates statistics needed to calculate four factors. Uses some nice regex and the rev() function to add opponent's relevant stats
+form_factor_stats = function(df) {
+  df = df %>%
+    mutate(FGM = as.numeric(str_extract(FG, "^[^-]*")),  # Field goals made
+           `3FGM` = as.numeric(str_extract(`3PT`, "^[^-]*")),  # Three point field goals made
+           FGA = as.numeric(str_extract(FG, "[^-]*$")),  # Field goal attempts
+           FTA = as.numeric(str_extract(FT, "[^-]*$")),  # Free throws attempted
+           FTM = as.numeric(str_extract(FT, "^[^-]*")),  # Free throws made
+           TO = as.numeric(`Total Turnovers`),  # Turnovers
+           OR = as.numeric(`Offensive Rebounds`),  # Offensive rebounds
+           DR = as.numeric(`Defensive Rebounds`),  # Defensive rebounds
+           OPP_FGM = rev(FGM),  # Opponent FGM
+           OPP_3FGM = rev(`3FGM`),  # Opponent three point FGM
+           OPP_FGA = rev(FGA),  # Opponent FGA
+           OPP_FTA = rev(FTA),  # Opponent FTA
+           OPP_FTM = rev(FTM),  # Opponent FTM
+           OPP_TO = rev(TO),  # Opponent TO
+           OPP_OR = rev(OR),  # Opponent OR
+           OPP_DR = rev(DR))  # Opponent DR
+  df = df %>%
+    select(Team, FGM, `3FGM`, FGA, FTA, FTM, TO, OR, DR, OPP_FGM, OPP_3FGM, OPP_FGA, OPP_FTA, OPP_FTM, OPP_TO, OPP_OR, OPP_DR)
+  return(df)
+}
+
+# Calculates four factors and returns corresponding data frame
+calculate_factors = function(df) {
+  df = df %>%
+    mutate(EFG = (FGM + 0.5 * `3FGM`) / FGA,
+           TPP = TO / (FGA - OR + TO + (0.44 * FTA)),
+           ORP = OR / (OR + OPP_DR),
+           FTR = FTA / FGA,
+           OPP_EFG = (OPP_FGM + 0.5 * OPP_3FGM) / OPP_FGA,
+           DTPP = OPP_TO / (OPP_FGA - OPP_OR + OPP_TO + (0.44 * OPP_FTA)),
+           DRP = DR / (DR + OPP_OR),
+           OPP_FTR = OPP_FTA / OPP_FGA)
+  return(df)
+}
+```
+
+
+```{r, warning=F, echo=F}
+# Now, the annoying part: collecting the game IDs:
+# Conferences: PAC, B12, B10, SEC, ACC, MountainW, A10, AAC, WCC, BigE... take best, middle, and worst from each. 
+
+# Best
+# Kansas
+big12_1 = c(401168155, 401169615, 401169621, 401169630, 401182627, 401182629, 401169646, 401169649, 401169657, 
+               401169661, 401169669, 401169679, 401169686, 401169688, 401169693, 401169699, 401169705, 401169713, 401169718,
+               401169726, 401169729, 401169733, 401169741, 401169743, 401169748, 401169753, 401169759, 401169764, 401169772,
+               401169774)
+# Gonzaga
+wcc_1 = c(401169828, 401174720, 401175215, 401170518, 401183481, 401183484, 401175220,
+                401170617, 401170623, 401168261, 401166502, 401172493, 401175232, 401175236, 401175240, 401175242, 401175246,
+                401175179, 401175256, 401175260, 401175264, 401175268, 401175272, 401175278, 401175281, 401175189, 401175288,
+                401175292, 401211162, 401211164)
+# Dayton
+a10_1 = c(401173575, 401170134, 401169859, 401182626, 401182629, 401170156, 401170088, 401170176, 401170181,
+               401170191, 401170200, 401170208, 401170214, 401170220, 401170229, 401170237, 401170242, 401170250, 401170257,
+               401170264, 401170270, 401170281, 401170287, 401170293, 401170299, 401170308, 401170312, 401170318, 401170327,
+               401170334)
+# FSU
+acc_1 = c(401168168, 401168160, 401168198, 401168210, 401168215, 401168227, 401187174, 401168234, 401168520, 401168258,
+            401168271, 401168278, 401168521, 401168506, 401168522, 401168476, 401168523, 401168524, 401168480, 401168525, 401168498,
+            401168526, 401168365, 401168527, 401168528, 401168529, 401168518, 401168530, 401168531, 401168532)
+# SDSU
+mountainw_1 = c(401211058, 401211052, 401211056, 401173804, 401173796, 401173792, 401173784, 401173777, 401173772, 401173765, 401173759,
+                401173755, 401173746, 401173744, 401173737, 401173731, 401173729, 401173725, 401173716, 401171566, 401170637, 401182455,
+                401173692, 401173682, 401186913, 401168318, 401173675, 401173672, 401173663, 401173649)
+# Kentucky
+sec_1 = c(401166388, 401166381, 401166378, 401166368, 401166363, 401166356, 401166347, 401166339, 401166333, 401166327, 401166322, 401166315,
+          401169716, 401166305, 401166300, 401166293, 401166283, 401166278, 401166272, 401168280, 401166125, 401169891, 401168249, 401169879,
+          401169863, 401169856, 401169850, 401169836, 401169817, 401169795)
+# Oregon
+pac12_1 = c(401170555, 401170563, 401169444, 401169449, 401168445, 401183481, 401183485, 401170612, 401166114, 401166495, 401170635,
+            401170642, 401170644, 401170650, 401170655, 401170659, 401170669, 401170673, 401170677, 401170685, 401170687, 401170693, 401170705,
+            401170709, 401170719, 401170722, 401170726, 401170734, 401170744, 401170748)
+# Wisconsin
+big10_1 = c(401175202, 401166065, 401166074, 401166085, 401170147, 401183492, 401168619, 401166106, 401166112, 401166127, 401169910,
+            401166144, 401166148, 401166158, 401166165, 401166170, 401166174, 401166182, 401166187, 401166193, 401166204, 401166209, 401166217,
+            401166225, 401166233, 401166242, 401166247, 401166256, 401166261, 401166264)
+# Creighton
+bigE_1 = c(401166058, 401168315, 401168316, 401168317, 401168318, 401186914, 401168319, 401168320, 401168321, 401168322, 401168323,
+           401182454, 401168324, 401168298, 401168325, 401168326, 401168327, 401168328, 401168329, 401168330, 401168331, 401168332, 401168333,
+           401168334, 401168335, 401168336, 401168311, 401168337, 401168338, 401168339)
+# Houston
+aac_1 = c(401169484, 401169480, 401169473, 401169577, 401169572, 401169567, 401169559, 401169555, 401169551, 401169546, 401169537, 401169534,
+            401169529, 401169521, 401169516, 401182623, 401182617, 401170830, 401169464, 401170000, 401169459, 401169999, 401169998,
+          401169449, 401170828, 401169446, 401170829, 401169498, 401169503, 401169507)
+
+# Middle
+# Texas Tech
+big12_mid = c(401169774, 401169768, 401169763, 401169762, 401169757, 401169751, 401169744, 401169738, 401169735, 401169730, 401169726, 401169722,
+              401169716, 401169706, 401169701, 401169695, 401169690, 401169685, 401169678, 401169672, 401169666, 401169659, 401168245, 401168345,
+              401186914, 401169635, 401169629, 401169626, 401169613, 401169606)
+# Pepperdine
+wcc_mid = c(401211161, 401211159, 401175190, 401175286, 401175283, 401175278, 401175276, 401175273, 401175270, 401175265, 401175182, 401175258,
+            401175254, 401175251, 401175247, 401175244, 401175236, 401175234, 401173713, 401166505, 401166492, 401175224, 401166473, 401182606,
+            401182602, 401170601, 401166445, 401170586, 401172934, 401170553)
+# UMass Minutemen
+a10_mid = c(401170109, 401170117, 401170128, 401170136, 401168212, 401183488, 401166099, 401169875, 401170161, 401170173, 401170189,
+            401170207, 401170219, 401170228, 401170229, 401170240, 401170246, 401170254, 401170258, 401170268, 401170273, 401170276, 401170285,
+            401170293, 401170300, 401170309, 401170317, 401170320, 401170330, 401170337)
+# Syracuse
+acc_mid = c(401211590, 401168546, 401168545, 401168503, 401168544, 401168543, 401168517, 401168527, 401168542, 401168541, 401168362, 401168540,
+            401168539, 401168538, 401168537, 401168536, 401168475, 401168535, 401168534, 401168281, 401168272, 401168263, 401168248, 401168533,
+            401168238, 401182559, 401168223, 401168211, 401168202, 401168161)
+# Colorado State
+mountainw_mid = c(401168162, 401173659, 401173666, 401170084, 401186181, 401186435, 401173680, 401173682, 401173690, 401173694,
+                  401170622, 401170047, 401173711, 401173718, 401173721, 401173732, 401173739, 401173741, 401173749, 401173754, 401173758, 401173762,
+                  401173766, 401173776, 401173781, 401173786, 401173790, 401173796, 401173801, 401211051)
+# Texas A&M
+sec_mid = c(401169805, 401169816, 401169828, 401169846, 401169862, 401182562, 401182565, 401169648, 401169890, 401169901, 401169920, 401166275, 401166279,
+            401166285, 401166291, 401166297, 401166306, 401169712, 401166311, 401166319, 401166328, 401166334, 401166345, 401166348, 401166358, 401166362,
+            401166368, 401166374, 401166383, 401166391)
+# Colorado
+pac12_mid = c(401170560, 401170596, 401186102, 401166462, 401170608, 401169646, 401170618, 401170622, 401170633, 401170191, 401183194,
+              401170644, 401170652, 401170662, 401170666, 401170670, 401170676, 401170681, 401170689, 401170694, 401170700, 401170704, 401170709, 401170714,
+              401170723, 401170728, 401170733, 401170741, 401170751, 401211621)
+# Penn State
+big10_mid = c(401166031, 401166066, 401166080, 401166093, 401169861, 401182559, 401168242, 401166105, 401166110, 401166117, 401166123, 401166139,
+              401166150, 401166156, 401166165, 401166171, 401166178, 401166184, 401166197, 401166201, 401166208, 401166215, 401166220, 401166227, 401166232,
+              401166239, 401166246, 401166251, 401166258, 401166265)
+# Marquette
+bigE_mid = c(401168405, 401166062, 401166074, 401168406, 401168407, 401182563, 401187013, 401168408, 401168409, 401168410, 401168411, 401168412, 401168324,
+             401168413, 401168414, 401168415, 401168416, 401168397, 401168417, 401168303, 401168418, 401168375, 401168307, 401168419, 401168336, 401168420, 
+             401168402, 401168421, 401168381, 401168422)
+# SMU
+aac_mid = c(401170006, 401170007, 401170008, 401170009, 401170010, 401170011, 401170012, 401170013, 401168389, 401169897, 401170014, 401169514, 401170015,
+            401169523, 401169528, 401169534, 401169539, 401169544, 401169548, 401169552, 401169561, 401169568, 401169574, 401169473, 401169479, 401169485,
+            401169489, 401169499, 401169501, 401169505)
+
+# Worst
+# KState
+big12_worst = c(401169604, 401169622, 401168217, 401186214, 401169639, 401168409, 401169651, 401169654, 401169665, 401169671,
+                401169682, 401169684, 401169692, 401169695, 401169700, 401169705, 401169715, 401169721, 401169723, 401169728, 401169737, 401169740, 
+                401169747, 401169751, 401169754, 401169761, 401169764, 401169771, 401169777, 401211470)
+# Portland
+wcc_worst = c(401170561, 401170889, 401166441, 401171633, 401175218, 401174414, 401175222, 401170077, 401175225, 401175226,
+              401169466, 401182620, 401182616, 401175232, 401175238, 401175177, 401175248, 401175252, 401175253, 401175258, 401175262, 401175267,
+              401175184, 401175274, 401175275, 401175283, 401175284, 401175290, 401175295, 401211157)
+# Fordham
+a10_worst = c(401170118, 401170125, 401170082, 401185763, 401185922, 401170153, 401170163, 401170172, 401170179, 401170188, 401170209,
+              401170215, 401170221, 401170234, 401170238, 401170247, 401170253, 401170261, 401170266, 401170270, 401170284, 401170288, 401170297,
+              401170302, 401170309, 401170315, 401170322, 401170328, 401170335, 401210902)
+# Wake Forest
+acc_worst = c(401168158, 401168172, 401168193, 401168208, 401168225, 401182600, 401182607, 401168242, 401168575, 401168253, 401168274,
+              401168576, 401168522, 401168357, 401168548, 401168577, 401168578, 401168479, 401168569, 401168579, 401168514, 401168541, 401168499,
+              401168580, 401168562, 401168369, 401168574, 401168504, 401168581, 401211585)
+# Wyoming
+mountainw_worst = c(401169813, 401170579, 401173671, 401170596, 401186101, 401173683, 401173688, 401166487, 401173701,
+                    401173705, 401173712, 401173720, 401173721, 401173729, 401173733, 401173736, 401173743, 401173746, 401173757, 401173761, 401173767,
+                    401173774, 401173781, 401173787, 401173791, 401173795, 401173803, 401211051, 401211055, 401211057)
+# Vanderbilt
+sec_worst = c(401169826, 401169847, 401169853, 401169860, 401169867, 401169872, 401169887, 401169896, 401169908, 401169921,
+              401170015, 401166282, 401166285, 401166295, 401166301, 401166310, 401170893, 401166315, 401166324, 401166331, 401166338, 401166339,
+              401166352, 401166353, 401166364, 401166372, 401166375, 401166380, 401166387, 401211457)
+# Washington
+pac12_worst = c(401169602, 401169833, 401166443, 401170595, 401170606, 401166467, 401170617, 401170630, 401170075, 401182618,
+                401182623, 401170647, 401170653, 401170657, 401170658, 401170668, 401170673, 401170679, 401170681, 401170691, 401170695, 401170707,
+                401170713, 401170716, 401170725, 401170729, 401170737, 401170743, 401170746, 401211619)
+# Nebraska
+big10_worst = c(401166017, 401166089, 401170086, 401186194, 401186454, 401168239, 401168320, 401166113, 401166119, 401166126,
+                401166138, 401166147, 401166155, 401166164, 401166169, 401166177, 401166182, 401166189, 401166194, 401166201, 401166213, 401166219,
+                401166225, 401166237, 401166243, 401166248, 401166254, 401166262, 401166270, 401211004)
+# DePaul
+bigE_worst = c(401168342, 401166057, 401168343, 401168209, 401168344, 401166101, 401168345, 401169953, 401168346, 401168347,
+               401168348, 401168349, 401168350, 401168351, 401168352, 401168301, 401168329, 401168373, 401168374, 401168375, 401168376, 401168377,
+               401168335, 401168378, 401168379, 401168380, 401168312, 401168381, 401168382, 401210944)
+# Tulane
+aac_worst = c(401170030, 401170031, 401170032, 401169448, 401182608, 401182612, 401170033, 401170034, 401170035, 401170036, 401170037, 401197795,
+              401169511, 401169519, 401169524, 401169527, 401169532, 401169540, 401169547, 401169556, 401169561, 401169567, 401169570, 401169575,
+              401169475, 401169479, 401169483, 401169490, 401169496, 401169509)
+
+teams_of_interest = c("KU", "GONZ", "DAY", "FSU", "SDSU", "UK", "ORE", "WISC", "CREI", "HOU", "TTU", "PEPP", "MASS", "SYR", "CSU", "TA&M",
+                      "COLO", "PSU", "MARQ", "SMU", "KSU", "PORT", "FOR", "WAKE", "WYO", "VAN", "WASH", "NEB", "DEP", "TULN")
+
+# Get factor stats for each game. Put into single data frame
+game_ids = c(big12_1, wcc_1, a10_1, acc_1, mountainw_1, sec_1, pac12_1, big10_1, bigE_1, aac_1,
+             big12_mid, wcc_mid, a10_mid, acc_mid, mountainw_mid, sec_mid, pac12_mid, big10_mid, bigE_mid, aac_mid,
+             big12_worst, wcc_worst, a10_worst, acc_worst, mountainw_worst, sec_worst, pac12_worst, big10_worst, bigE_worst, aac_worst)
+
+all_game_list = list()
+
+for (i in seq_along(game_ids)) {
+  scraped_box = scrape_box(paste0('https://www.espn.com/mens-college-basketball/matchup?gameId=', game_ids[i]))
+  transformed_box = transform_box(scraped_box)
+  factor_stats_df = form_factor_stats(transformed_box)
+  all_game_list[[i]] = factor_stats_df
+}
+
+all_game_df = bind_rows(all_game_list)
+kable(all_game_df[1:10, 1:11], "simple") %>%
+  kable_styling(font_size = 5)
+```
+
+
+The above table shows a slice of the relevant box score statistics for each game that we'll use to calculate the four factors. For example, the first two rows represent the Kansas vs. Duke game, one of the first of the season.
+
+
+```{r, message=F, warning=F}
+# Group data by team and aggregate (we use sum of course)
+grouped = all_game_df %>%
+  group_by(Team) %>%
+  summarize(across(.cols = everything(), sum)) %>%
+  filter(Team %in% teams_of_interest)
+
+kable(grouped[1:5, 1:11], "simple") %>%
+  kable_styling(font_size = 5)
+```
+
+
+The code above aggregates the data for each team of interest by summing each column. 
+
+We see that this data frame includes each of the box score statistics necessary to calculate our factors. For example, Colorado made 890 field goals out of 2,070, and they gave up 882 successful field goals to their opponents. 272 of their 890 were 3-point field goals, and of their opponents' 882 makes, 230 were 3-pointers.
+
+
+```{r, echo=F}
+# Helper function that calculates number of wins for a team given the relevant game IDs
+calculate_wins = function(team_string, ids) {
+  num_wins = 0
+  for (i in seq_along(ids)) {
+    table = read_html(paste0('https://www.espn.com/mens-college-basketball/matchup?gameId=', ids[i])) %>%
+      html_table()
+    final = as.data.frame(table[1])
+    points = final %>% filter(Var.1 == team_string) %>% pull(T)
+    opp_points = final %>% filter(Var.1 != team_string) %>% pull(T)
+    if (points > opp_points) {
+      num_wins = num_wins + 1
+    }
+  }
+  return(num_wins)
+}
+
+# Team abbreviations in alphabetical order
+sorted_teams = sort(teams_of_interest)
+
+# Game ID list; each element is vector of game IDs according to alphabetical order of the teams
+sorted_ids = list(pac12_mid, bigE_1, mountainw_mid, a10_1, bigE_worst, a10_worst, acc_1, wcc_1, aac_1, big12_worst, big12_1, bigE_mid, a10_mid, big10_worst, pac12_1, 
+                  wcc_mid, wcc_worst, big10_mid, mountainw_1, aac_mid, acc_mid, sec_mid, big12_mid, aac_worst, sec_1, sec_worst, acc_worst, pac12_worst, big10_1, mountainw_worst)
+
+# Container for wins for each team of interest 
+overall_wins = c()
+for (i in seq_along(sorted_teams)) {
+  relevant_ids = sorted_ids[[i]]
+  wins = calculate_wins(sorted_teams[i], relevant_ids)
+  overall_wins = c(overall_wins, wins)
+}
+
+# Finally, we calculate the four factors! Also add in wins for each team
+four_factors_df = calculate_factors(grouped) %>%
+  select(-(2:17)) %>%
+  mutate(Wins = overall_wins) %>%
+  relocate(Wins, .after = Team)
+
+kable(four_factors_df[1:30, ], "simple")
+```
+
+
+These are our four factors for each team (or eight, if you like). Note we have each team's number of wins now, which will come into play soon as our dependent variable.
+
+
+```{r, echo=F}
+# Make rankings for each statistic
+ranking_tab = four_factors_df %>%
+  mutate(EFG = rank(-EFG),
+         TPP = rank(TPP),
+         ORP = rank(-ORP),
+         FTR = rank(-FTR),
+         OPP_EFG = rank(OPP_EFG),
+         DTPP = rank(-DTPP),
+         DRP = rank(-DRP),
+         OPP_FTR = rank(OPP_FTR)) %>%
+  arrange(desc(Wins))
+
+kable(ranking_tab[1:30, ], "simple")
+```
+
+
+This data frame is a table of rankings. For example, Dayton was 1st among our 30 teams in EFG, 12th in TPP, 22nd in ORP, 16th in FTR, etc.
+
+## The Analysis 
+
+Interestingly, we see the top 3 teams in wins, Dayton, Gonzaga, and SDSU, are 1st, 2nd, and 4th respectively in EFG ranking. Moreover, 7 of the top 10 teams in wins are top 10 in EFG, and 6 of the top 10 rank inside the top 10 in OPP_EFG. This supports the NBA analysis that has found shooting is the most important factor. If we look at the bottom six teams or so , not only do we see low ranks for EFG, but we also see the same for ORP. Note that Fordham, Portland, Wyoming, and Nebraska all shot poorly and didn't get second chances either. Fordham is also interesting because they were last in EFG and FTR, yet they played good defense, ranking 9th and 8th in OPP_EFG and DTPP respectively. As for a couple teams in the middle, SMU and Colorado State were good shooting teams (8th and 7th respectively), but poor defending shooters (20th and 26th respectively). Further, they were in the bottom half in turnovers committed on offense (23rd and 17th). Another team I want to point out is Washington, the [most unlucky team](https://kenpom.com/index.php?y=2020&s=RankLuck) in the nation last year. They were 14th in EFG (not bad), 7th in FTR, and 2nd(!) in OPP_EFG, but they finished last in the PAC-12 and won only 13 games. Note that they were 29th in TPP, 18th in ORP, and 29th in DRP, though, meaning they turned the ball over a lot and were not a good rebounding team.
+
+Now, we will dig into some of the good statistics stuff, emulating Wayne Winston's analysis from his fantastic book *Mathletics*. We will run a regression to see which factors most influence wins. Our explanatory variables are:
+
+1. Shooting differential: EFG - OPP_EFG
+2. Turnover differential: TPP - DTPP
+3. Rebounding differential: ORP - DRP
+4. Free throw differential: FTR - OPP_FTR
+
+Our response variable is wins.
+
+
+```{r}
+# Prepare to run regression by making appropriate variables
+deviation_tab = four_factors_df %>%
+  mutate(EFG_diff = EFG - OPP_EFG,
+         TO_diff = TPP - DTPP,
+         REB_diff = ORP - DRP,
+         FTR_diff = FTR - OPP_FTR) %>%
+  select(Wins, EFG_diff, TO_diff, REB_diff, FTR_diff)
+
+# Correlation matrix
+kable(cor(deviation_tab))
+```
+
+
+Here, note that our independent variables are not highly-correlated with each other. The highest correlation we see is between TO_diff and FTR_diff at 0.25. I postulate this is because teams that shoot a lot of free throws are "bigger" teams that draw more fouls, i.e. their lineups are taller than average, meaning they are worse ball-handlers and therefore commit more turnovers.
+
+Statistically, the fact that these variables are relatively uncorrelated is a good thing, since the standard errors of our coefficient estimates will consequently be low. This means that our coefficient estimates will be reliable, allowing us to infer which variabels most influence wins with confidence. The problem that results when two explanatory varibles are highly correlated is called "collinearity," and [here](https://stats.stackexchange.com/questions/1149/is-there-an-intuitive-explanation-why-multicollinearity-is-a-problem-in-linear-r) is a simple discussion of the problem that anyone can understand.
+
+Before we run our regression, let's visualize each variable's relationship with wins via scatterplots. I include the correlation of each variable with wins, denoted by "r," and include regression lines.
+
+```{r, echo=F, message=F}
+# Visualize
+plt1 = ggplot(deviation_tab, aes(EFG_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = -0.025, y = 27.5, label = "r = 0.894", size = 5, color = "red")
+
+plt2 = ggplot(deviation_tab, aes(TO_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = 0.0325, y = 26.5, label = "r = -0.173", size = 5, color = "red")
+
+plt3 = ggplot(deviation_tab, aes(REB_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = -0.53, y = 26.5, label = "r = 0.292", size = 5, color = "red")
+
+plt4 = ggplot(deviation_tab, aes(FTR_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = -0.060, y = 26.9, label = "r = 0.223", size = 5, color = "red")
+
+grid.arrange(plt1, plt2, plt3, plt4, ncol = 2, nrow = 2)
+
+# Save plot
+g = arrangeGrob(plt1, plt2, plt3, plt4, ncol = 2, nrow=2)
+ggsave(file="./images/scatters.png", g)
+```
+
+
+The Wins vs. EFG_diff plot... textbook. Note the high correlation there as well. Furthermore, we see a negative correlation between wins and TO_diff--since an increase in TO_diff means committing more turners on offense, this should lead to a decrease in wins. So that makes sense. We see positive correlations in the REB_diff and FTR_diff plots, but they are much weaker than that of EFG_diff.
+
+Great! We are now ready to regress wins on these four variables.
+
+
+```{r}
+# Run regression on all four factors
+four_factors_fit = lm(Wins ~ EFG_diff + TO_diff + REB_diff + FTR_diff, data = deviation_tab)
+summary(four_factors_fit)
+```
+
+
+There is a lot to notice here. By looking at R-squared, we see that 86% of the variability in wins can be explained by our four explanatory variables. That's pretty high. Next, we can learn a lot from the coefficients themselves. EFG_diff is highly significant (at the 0.1% level), while TO_diff is significant at the 5% level and REB_diff at the 10% level. FTR_diff is not significant. The coefficient estimates bear this out as well: in order of decreasing magnitude, we have EFG_diff (117.9), TO_diff (47.8), REB_diff (18.0), and FTR_diff (11.5). These results imply that EFG_diff is by far the most important factor in a college basketball team winning games. 
+
+Now we'll run a few more regressions. First, we remove FTR_diff since it was the one insignificant variable.
+
+
+```{r}
+# Remove FTR_diff
+summary(lm(Wins ~ EFG_diff + TO_diff + REB_diff, data = deviation_tab))
+```
+
+
+Here, note that even when we exclude FTR_diff, 85% of the variability in wins is still explained by the other three factors as opposed to 86% we saw previously. This confirms our suspicion that FTR_diff is the least important factor in a team's success. Next, we see that the p-value for REB_diff (0.0674) is now lower than that for TO_diff (0.0686). This is the opposite of what we saw in the first regression, and I believe it's due to the correlation of 0.25 between FTR_diff and TO_diff, the highest between the four explanatory variables we saw earlier. This high correlation likely caused the coefficient for TO_diff to be a bit higher than it deserved in the first regression, and removing FTR_diff caused TO_diff's coefficient to stabilize. 
+
+The last four regressions we analyze will be single variable, i.e. we regress wins on each of the four factors individually.
+
+
+```{r}
+# Individual regressions. First EFG_diff.
+summary(lm(Wins ~ EFG_diff, data = deviation_tab))
+```
+
+
+EFG_diff alone explains 80% of variance in a team's wins and is highly significant.
+
+
+```{r}
+# Second TO_diff.
+summary(lm(Wins ~ TO_diff, data = deviation_tab))
+```
+
+
+TO_diff alone explains only 3% of variation in wins and is insignificant. 
+
+
+```{r}
+# Third REB_diff.
+summary(lm(Wins ~ REB_diff, data = deviation_tab))
+```
+
+
+REB_diff alone explains only 9% of variation in wins and is insignificant.
+
+
+```{r}
+# Last FTR_diff.
+summary(lm(Wins ~ FTR_diff, data = deviation_tab))
+```
+
+
+As expected, FTR_diff is insignificant and explains only 5% of variance in wins.
+
+
+## Conclusion
+
+To summarize, our regression of wins on all four factors shows we can predict wins with the formula: predicted wins = 22.208 + 117.855(EFG_diff) - 47.810(TO_diff) + 18.049(REB_diff) + 11.516(FTR_diff). However, if we had to select one of the four factors to predict or infer team success, it would undoubtedly have to be EFG_diff. Explicitly, good shooting and/or good defense against shooters is most valuable.
+
+Given these results, let's quantify how college basketball teams can improve. By looking at the coefficient estimates, a 1% improvement in EFG_diff is worth 1.17 wins. This could happen through a team improving their own EFG by 1%, improving their defense by 1% (decreasing their opponent's EFG by 1%), or a mixture of the two. Next, a 1% increase in in TO_diff is worth -0.47 wins. This make sense, since increasing TO_diff (turnovers committed per possession - defensive turnovers caused per possession by opponent) is obviously bad. Hence, committing 1 more turnover per 100 possessions or forcing 1 fewer turnover per 100 opponent posessions would lead to about 0.5 fewer wins. Next, a 1% increase in REB_diff (ORP - DRP) would lead to 0.18 more wins. This could mean grabbing 1 more offensive rebound per 100 missed shots or grabbing 1 more defensive rebound per 100 missed shots by opponent. Finally, a 1% increase in FTR_diff would lead to 0.12 more wins, which could occur through gaining 1 free throw attempt per 100 field goal attempts or conceding 1 less free throw attempt per 100 field goal attempts by opponent.
+
+To compare to the NBA, recall that Winston found EFG_diff explains 71% of variance in NBA team wins, TO_diff 15%, REB_diff 6%, and FTR_diff essentially 0%. We found corresponding percentages of 80%, 3%, 9%, and 5%. This implies that FTR_diff in particular is more important in college than in the NBA, while TO_diff is more important in the NBA than in the college game. Although EFG_diff in our analysis is 9% higher than Winston's number, I'm hesitant to say it's more important in college than in the NBA because shooting in the NBA has recently become more important than it was at the time of Winston's findings.)
+
+To devise our own weights for college basketball, we can simply divide the absolute value of each coefficient by the sum of the absolute values of all four. Doing so, we find:
+
+1. Shooting differential (60%)
+2. Turnover differential (25%)
+3. Rebounding differential (9%)
+4. Free throw rate differential (6%)
+
+Overall, shooting offense and defense is undoubtedly the king of the four factors in both college and professional basketball. Meanwhile, shooting more free throws and preventing an opponent from doing so is more important in college ball, and causing more turnovers while protecting the ball better is a bit more important in the pro game. Rebounding takes on a similar level of importance at both levels of play. To speculate why we see these differences, I believe free throws are more valuable in college for a couple reasons: 1) the games are shorter, making every point more valuable, and 2) although I don't have the data to support this claim, the variance between two college teams' free throw percentages is greater than what we see between two NBA teams. As for turnovers, I presume possessions in the NBA are more valuable than those in college since 1) college players are simply worse at protecting the ball than professional players, and 2) the playing field is much more level in the NBA, meaning games are closer.
+
+
+## Further Work
+
+The main weakness of this analysis is that it does not adjust for opponent strength. For example, ACC competition is undoubtedly fiercer than WCC competition, meaning a team like Gonzaga may have unfairly influential numbers in certain areas. For instance, the fact that Gonzaga was a particularly good rebounding team in 19-20 (see the ranking table above) could cause the importance of rebounding to be inflated. A more complete work would adjust each team's numbers according to opponent strength. 
