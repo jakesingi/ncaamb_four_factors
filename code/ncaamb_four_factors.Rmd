@@ -45,7 +45,7 @@ In this analysis, I will analyze college basketball data from the 2019-2020 seas
 
 ## The Data
 
-There are a lot of Division 1 college basketball games in a season--too many, in fact, to go through every single one. So, I looked at the 10 ["high-major" conferences](https://en.wikipedia.org/wiki/Mid-major#Basketball): the Power 5 plus the Big East, Mountain West, Atlantic 10, American Athletic, and West Coast Conferences. From each conference, I took the champion, a middling team, and bottom of the barrel, yielding a total of 30 teams. These teams are: (Big12: Kansas, Texas Tech, KState), (WCC: Gonzaga, Pepperdine, Portland), (A10: Dayton, UMass, Fordham), (ACC: FSU, Syracuse, Wake Forest), (MountainW: SDSU, Colorado State, Wyoming), (SEC: Kentucky, A&M, Vandy), (Pac12: Oregon, Colorado, Washington), (Big10: Wisconsin, Penn State, Nebraska), (BigE: Creighton, Marquette, DePaul), and (AAC: Houston, SMU, Tulane). I employed this approach in order to include a wide variety of team talent. I limited the games scraped for each team to 30 games, yielding a total of 900 games (there was no overlap). All data comes from the 19-20 season.
+There are a lot of Division 1 college basketball games in a season--too many, in fact, to go through every single one. So, I looked at the 10 ["high-major" conferences](https://en.wikipedia.org/wiki/Mid-major#Basketball): the Power 5 plus the Big East, Mountain West, Atlantic 10, American Athletic, and West Coast Conferences. From each conference, I took the champion, a middling team, and bottom of the barrel, yielding a total of 30 teams. These teams are: (Big12: Kansas, Texas Tech, KState), (WCC: Gonzaga, Pepperdine, Portland), (A10: Dayton, UMass, Fordham), (ACC: FSU, Syracuse, Wake Forest), (MountainW: SDSU, Colorado State, Wyoming), (SEC: Kentucky, A&M, Vandy), (Pac12: Oregon, Colorado, Washington), (Big10: Wisconsin, Penn State, Nebraska), (BigE: Creighton, Marquette, DePaul), and (AAC: Houston, SMU, Tulane). I employed this approach in order to include a wide variety of team talent. I limited the games scraped for each team to 30 games, and due to overlap, there are 832 games. All data comes from the 19-20 season.
 
 ## The Code
 
@@ -267,12 +267,14 @@ teams_of_interest = c("KU", "GONZ", "DAY", "FSU", "SDSU", "UK", "ORE", "WISC", "
                       "COLO", "PSU", "MARQ", "SMU", "KSU", "PORT", "FOR", "WAKE", "WYO", "VAN", "WASH", "NEB", "DEP", "TULN")
 
 # Get factor stats for each game. Put into single data frame
-game_ids = c(big12_1, wcc_1, a10_1, acc_1, mountainw_1, sec_1, pac12_1, big10_1, bigE_1, aac_1,
+# First, collect game_ids, using unique() to remove duplicates
+game_ids = unique(c(big12_1, wcc_1, a10_1, acc_1, mountainw_1, sec_1, pac12_1, big10_1, bigE_1, aac_1,
              big12_mid, wcc_mid, a10_mid, acc_mid, mountainw_mid, sec_mid, pac12_mid, big10_mid, bigE_mid, aac_mid,
-             big12_worst, wcc_worst, a10_worst, acc_worst, mountainw_worst, sec_worst, pac12_worst, big10_worst, bigE_worst, aac_worst)
+             big12_worst, wcc_worst, a10_worst, acc_worst, mountainw_worst, sec_worst, pac12_worst, big10_worst, bigE_worst, aac_worst))
 
 all_game_list = list()
 
+# Put four factor stats into list
 for (i in seq_along(game_ids)) {
   scraped_box = scrape_box(paste0('https://www.espn.com/mens-college-basketball/matchup?gameId=', game_ids[i]))
   transformed_box = transform_box(scraped_box)
@@ -280,6 +282,7 @@ for (i in seq_along(game_ids)) {
   all_game_list[[i]] = factor_stats_df
 }
 
+# Combine list elements into data frame
 all_game_df = bind_rows(all_game_list)
 kable(all_game_df[1:10, 1:11], "simple") %>%
   kable_styling(font_size = 5)
@@ -303,7 +306,7 @@ kable(grouped[1:5, 1:11], "simple") %>%
 
 The code above aggregates the data for each team of interest by summing each column. 
 
-We see that this data frame includes each of the box score statistics necessary to calculate our factors. For example, Colorado made 890 field goals out of 2,070, and they gave up 882 successful field goals to their opponents. 272 of their 890 were 3-point field goals, and of their opponents' 882 makes, 230 were 3-pointers.
+We see that this data frame includes each of the box score statistics necessary to calculate our factors. For example, Colorado made 730 field goals out of 1,661, and they gave up 718 successful field goals to their opponents. 221 of their 890 were 3-point field goals, and of their opponents' 718 makes, 187 were 3-pointers.
 
 
 ```{r, echo=F}
@@ -372,7 +375,7 @@ This data frame is a table of rankings. For example, Dayton was 1st among our 30
 
 ## The Analysis 
 
-Interestingly, we see the top 3 teams in wins, Dayton, Gonzaga, and SDSU, are 1st, 2nd, and 4th respectively in EFG ranking. Moreover, 7 of the top 10 teams in wins are top 10 in EFG, and 6 of the top 10 rank inside the top 10 in OPP_EFG. This supports the NBA analysis that has found shooting is the most important factor. If we look at the bottom six teams or so , not only do we see low ranks for EFG, but we also see the same for ORP. Note that Fordham, Portland, Wyoming, and Nebraska all shot poorly and didn't get second chances either. Fordham is also interesting because they were last in EFG and FTR, yet they played good defense, ranking 9th and 8th in OPP_EFG and DTPP respectively. As for a couple teams in the middle, SMU and Colorado State were good shooting teams (8th and 7th respectively), but poor defending shooters (20th and 26th respectively). Further, they were in the bottom half in turnovers committed on offense (23rd and 17th). Another team I want to point out is Washington, the [most unlucky team](https://kenpom.com/index.php?y=2020&s=RankLuck) in the nation last year. They were 14th in EFG (not bad), 7th in FTR, and 2nd(!) in OPP_EFG, but they finished last in the PAC-12 and won only 13 games. Note that they were 29th in TPP, 18th in ORP, and 29th in DRP, though, meaning they turned the ball over a lot and were not a good rebounding team.
+Interestingly, we see the top 3 teams in wins, Dayton, Gonzaga, and SDSU, are 1st, 2nd, and 4th respectively in EFG ranking. Moreover, 7 of the top 10 teams in wins are top 10 in EFG, and 6 of the top 10 rank inside the top 10 in OPP_EFG. This supports the NBA analysis that has found shooting is the most important factor. If we look at the bottom six teams or so , not only do we see low ranks for EFG, but we also see the same for ORP. Note that Fordham, Portland, Wyoming, and Nebraska all shot poorly and didn't get second chances either. Fordham is also interesting because they were last in EFG and FTR, yet they played good defense, ranking 9th and 8th in OPP_EFG and DTPP respectively. As for a couple teams in the middle, SMU and Colorado State were good shooting teams (8th and 6th respectively), but poor defending shooters (19th and 26th respectively). Further, they were in the bottom half in turnovers committed on offense (25th and 16th). Another team I want to point out is Washington, the [most unlucky team](https://kenpom.com/index.php?y=2020&s=RankLuck) in the nation last year. They were 14th in EFG (not bad), 7th in FTR, and 3rd(!) in OPP_EFG, but they finished last in the PAC-12 and won only 13 games. Note that they were 29th in TPP, 18th in ORP, and 28th in DRP, though, meaning they turned the ball over a lot and were not a good rebounding team.
 
 Now, we will dig into some of the good statistics stuff, emulating Wayne Winston's analysis from his fantastic book *Mathletics*. We will run a regression to see which factors most influence wins. Our explanatory variables are:
 
@@ -398,7 +401,7 @@ kable(cor(deviation_tab))
 ```
 
 
-Here, note that our independent variables are not highly-correlated with each other. The highest correlation we see is between TO_diff and FTR_diff at 0.25. I postulate this is because teams that shoot a lot of free throws are "bigger" teams that draw more fouls, i.e. their lineups are taller than average, meaning they are worse ball-handlers and therefore commit more turnovers.
+Here, note that our independent variables are not highly-correlated with each other. The highest correlation we see is between TO_diff and FTR_diff at 0.26. I postulate this is because teams that shoot a lot of free throws are "bigger" teams that draw more fouls, i.e. their lineups are taller than average, meaning they are worse ball-handlers and therefore commit more turnovers.
 
 Statistically, the fact that these variables are relatively uncorrelated is a good thing, since the standard errors of our coefficient estimates will consequently be low. This means that our coefficient estimates will be reliable, allowing us to infer which variabels most influence wins with confidence. The problem that results when two explanatory varibles are highly correlated is called "collinearity," and [here](https://stats.stackexchange.com/questions/1149/is-there-an-intuitive-explanation-why-multicollinearity-is-a-problem-in-linear-r) is a simple discussion of the problem that anyone can understand.
 
@@ -406,19 +409,19 @@ Before we run our regression, let's visualize each variable's relationship with 
 
 ```{r, echo=F, message=F}
 # Visualize
-plt1 = ggplot(deviation_tab, aes(EFG_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = -0.025, y = 27.5, label = "r = 0.894", size = 5, color = "red")
+plt1 = ggplot(deviation_tab, aes(EFG_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = -0.025, y = 27.5, label = "r = 0.89", size = 5, color = "red")
 
-plt2 = ggplot(deviation_tab, aes(TO_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = 0.0325, y = 26.5, label = "r = -0.173", size = 5, color = "red")
+plt2 = ggplot(deviation_tab, aes(TO_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = 0.0325, y = 26.5, label = "r = -0.18", size = 5, color = "red")
 
-plt3 = ggplot(deviation_tab, aes(REB_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = -0.53, y = 26.5, label = "r = 0.292", size = 5, color = "red")
+plt3 = ggplot(deviation_tab, aes(REB_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = -0.53, y = 26.5, label = "r = 0.33", size = 5, color = "red")
 
-plt4 = ggplot(deviation_tab, aes(FTR_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = -0.060, y = 26.9, label = "r = 0.223", size = 5, color = "red")
+plt4 = ggplot(deviation_tab, aes(FTR_diff, Wins)) + geom_point() + geom_smooth(method = lm, se = F) + theme_bw() + annotate(geom = "text", x = -0.060, y = 26.9, label = "r = 0.25", size = 5, color = "red")
 
 grid.arrange(plt1, plt2, plt3, plt4, ncol = 2, nrow = 2)
 
 # Save plot
-g = arrangeGrob(plt1, plt2, plt3, plt4, ncol = 2, nrow=2)
-ggsave(file="./images/scatters.png", g)
+g = arrangeGrob(plt1, plt2, plt3, plt4, ncol = 2, nrow = 2)
+ggsave(file = "../images/scatters.png", g)
 ```
 
 
@@ -434,7 +437,7 @@ summary(four_factors_fit)
 ```
 
 
-There is a lot to notice here. By looking at R-squared, we see that 86% of the variability in wins can be explained by our four explanatory variables. That's pretty high. Next, we can learn a lot from the coefficients themselves. EFG_diff is highly significant (at the 0.1% level), while TO_diff is significant at the 5% level and REB_diff at the 10% level. FTR_diff is not significant. The coefficient estimates bear this out as well: in order of decreasing magnitude, we have EFG_diff (117.9), TO_diff (47.8), REB_diff (18.0), and FTR_diff (11.5). These results imply that EFG_diff is by far the most important factor in a college basketball team winning games. 
+There is a lot to notice here. By looking at R-squared, we see that 85% of the variability in wins can be explained by our four explanatory variables. That's pretty high. Next, we can learn a lot from the coefficients themselves. EFG_diff is highly significant (at the 0.1% level), while TO_diff is significant at the 5% level and REB_diff at the 10% level. FTR_diff is not significant. The coefficient estimates bear this out as well: in order of decreasing magnitude, we have EFG_diff (116.1), TO_diff (-52.0), REB_diff (18.0), and FTR_diff (11.1). These results imply that EFG_diff is by far the most important factor in a college basketball team winning games. 
 
 Now we'll run a few more regressions. First, we remove FTR_diff since it was the one insignificant variable.
 
@@ -445,7 +448,7 @@ summary(lm(Wins ~ EFG_diff + TO_diff + REB_diff, data = deviation_tab))
 ```
 
 
-Here, note that even when we exclude FTR_diff, 85% of the variability in wins is still explained by the other three factors as opposed to 86% we saw previously. This confirms our suspicion that FTR_diff is the least important factor in a team's success. Next, we see that the p-value for REB_diff (0.0674) is now lower than that for TO_diff (0.0686). This is the opposite of what we saw in the first regression, and I believe it's due to the correlation of 0.25 between FTR_diff and TO_diff, the highest between the four explanatory variables we saw earlier. This high correlation likely caused the coefficient for TO_diff to be a bit higher than it deserved in the first regression, and removing FTR_diff caused TO_diff's coefficient to stabilize. 
+Here, note that even when we exclude FTR_diff, 84% of the variability in wins is still explained by the other three factors as opposed to 86% we saw previously. This confirms our suspicion that FTR_diff is the least important factor in a team's success. Next, we see that TO_diff is now only significant at the 10% level as opposed to the 5% level. I believe that this is due to the correlation of 0.26 between FTR_diff and TO_diff, the highest between the four explanatory variables we saw earlier. This high correlation likely caused the coefficient for TO_diff to be a bit higher in magnitude than it deserved in the first regression, and removing FTR_diff caused TO_diff's coefficient to stabilize. 
 
 The last four regressions we analyze will be single variable, i.e. we regress wins on each of the four factors individually.
 
@@ -488,16 +491,16 @@ As expected, FTR_diff is insignificant and explains only 5% of variance in wins.
 
 ## Conclusion
 
-To summarize, our regression of wins on all four factors shows we can predict wins with the formula: predicted wins = 22.208 + 117.855(EFG_diff) - 47.810(TO_diff) + 18.049(REB_diff) + 11.516(FTR_diff). However, if we had to select one of the four factors to predict or infer team success, it would undoubtedly have to be EFG_diff. Explicitly, good shooting and/or good defense against shooters is most valuable.
+To summarize, our regression of wins on all four factors shows we can predict wins with the formula: predicted wins = 21.606 + 116.124(EFG_diff) - 52.019(TO_diff) + 17.959(REB_diff) + 11.150(FTR_diff). However, if we had to select one of the four factors to predict or infer team success, it would undoubtedly have to be EFG_diff. Explicitly, good shooting and/or good defense against shooters is most valuable.
 
-Given these results, let's quantify how college basketball teams can improve. By looking at the coefficient estimates, a 1% improvement in EFG_diff is worth 1.17 wins. This could happen through a team improving their own EFG by 1%, improving their defense by 1% (decreasing their opponent's EFG by 1%), or a mixture of the two. Next, a 1% increase in in TO_diff is worth -0.47 wins. This make sense, since increasing TO_diff (turnovers committed per possession - defensive turnovers caused per possession by opponent) is obviously bad. Hence, committing 1 more turnover per 100 possessions or forcing 1 fewer turnover per 100 opponent posessions would lead to about 0.5 fewer wins. Next, a 1% increase in REB_diff (ORP - DRP) would lead to 0.18 more wins. This could mean grabbing 1 more offensive rebound per 100 missed shots or grabbing 1 more defensive rebound per 100 missed shots by opponent. Finally, a 1% increase in FTR_diff would lead to 0.12 more wins, which could occur through gaining 1 free throw attempt per 100 field goal attempts or conceding 1 less free throw attempt per 100 field goal attempts by opponent.
+Given these results, let's quantify how college basketball teams can improve. By looking at the coefficient estimates, a 1% improvement in EFG_diff is worth 1.16 wins. This could happen through a team improving their own EFG by 1%, improving their defense by 1% (decreasing their opponent's EFG by 1%), or a mixture of the two. Next, a 1% increase in in TO_diff is worth -0.52 wins. This make sense, since increasing TO_diff (turnovers committed per possession - defensive turnovers caused per possession by opponent) is obviously bad. Hence, committing 1 more turnover per 100 possessions or forcing 1 fewer turnover per 100 opponent posessions would lead to about 0.5 fewer wins. Next, a 1% increase in REB_diff (ORP - DRP) would lead to 0.18 more wins. This could mean grabbing 1 more offensive rebound per 100 missed shots or grabbing 1 more defensive rebound per 100 missed shots by opponent. Finally, a 1% increase in FTR_diff would lead to 0.11 more wins, which could occur through gaining 1 free throw attempt per 100 field goal attempts or conceding 1 less free throw attempt per 100 field goal attempts by opponent.
 
 To compare to the NBA, recall that Winston found EFG_diff explains 71% of variance in NBA team wins, TO_diff 15%, REB_diff 6%, and FTR_diff essentially 0%. We found corresponding percentages of 80%, 3%, 9%, and 5%. This implies that FTR_diff in particular is more important in college than in the NBA, while TO_diff is more important in the NBA than in the college game. Although EFG_diff in our analysis is 9% higher than Winston's number, I'm hesitant to say it's more important in college than in the NBA because shooting in the NBA has recently become more important than it was at the time of Winston's findings.)
 
 To devise our own weights for college basketball, we can simply divide the absolute value of each coefficient by the sum of the absolute values of all four. Doing so, we find:
 
-1. Shooting differential (60%)
-2. Turnover differential (25%)
+1. Shooting differential (59%)
+2. Turnover differential (26%)
 3. Rebounding differential (9%)
 4. Free throw rate differential (6%)
 
